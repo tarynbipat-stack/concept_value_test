@@ -234,7 +234,8 @@ const SetupPage = () => {
         });
 
         if (!response.ok) {
-          throw new Error('Upload failed');
+          const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+          throw new Error(payload?.message ?? 'Failed to upload file.');
         }
 
         uploadedAssets.push((await response.json()) as SlideAsset);
@@ -246,8 +247,8 @@ const SetupPage = () => {
         updatedAt: new Date().toISOString(),
       });
       setError(null);
-    } catch {
-      setError('Failed to upload slides. Use PPT, PPTX, or PDF files.');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to upload slides. Use PPT, PPTX, or PDF files.');
     } finally {
       setUploadingField(null);
       event.target.value = '';
