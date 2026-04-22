@@ -16,6 +16,13 @@ const sanitizeName = (name: string) => name.replace(/[^a-zA-Z0-9._-]/g, '-');
 
 export async function POST(request: Request) {
   try {
+    if (process.env.VERCEL && !process.env.BLOB_READ_WRITE_TOKEN) {
+      return NextResponse.json(
+        { message: 'BLOB_READ_WRITE_TOKEN is missing in Vercel environment variables.' },
+        { status: 500 },
+      );
+    }
+
     const formData = await request.formData();
     const uploaded = formData.get('file');
 
@@ -70,6 +77,10 @@ export async function POST(request: Request) {
         { message: 'Upload storage is not configured for this environment. Configure Vercel Blob and set BLOB_READ_WRITE_TOKEN.' },
         { status: 500 },
       );
+    }
+
+    if (error instanceof Error) {
+      return NextResponse.json({ message: `Failed to upload file: ${error.message}` }, { status: 500 });
     }
 
     return NextResponse.json({ message: 'Failed to upload file.' }, { status: 500 });
