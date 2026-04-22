@@ -25,28 +25,226 @@ const formatFileSize = (size: number) => {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 };
 
-const SlideList = ({ assets, emptyLabel }: { assets: SlideAsset[]; emptyLabel: string }) => {
+const parseSelectedSlides = (value: string): number[] => {
+  if (!value.trim()) return [];
+
+  const numbers = new Set<number>();
+  const tokens = value
+    .split(',')
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  tokens.forEach((token) => {
+    if (token.includes('-')) {
+      const [startRaw, endRaw] = token.split('-').map((part) => part.trim());
+      const start = Number(startRaw);
+      const end = Number(endRaw);
+      if (!Number.isInteger(start) || !Number.isInteger(end) || start <= 0 || end <= 0) return;
+      const low = Math.min(start, end);
+      const high = Math.max(start, end);
+      for (let i = low; i <= high; i += 1) {
+        numbers.add(i);
+      }
+      return;
+    }
+
+    const single = Number(token);
+    if (Number.isInteger(single) && single > 0) {
+      numbers.add(single);
+    }
+  });
+
+  return [...numbers].sort((a, b) => a - b);
+};
+
+const isPdfAsset = (asset: SlideAsset): boolean => {
+  return asset.mimeType.toLowerCase().includes('pdf') || asset.name.toLowerCase().endsWith('.pdf');
+};
+
+const isPowerPointAsset = (asset: SlideAsset): boolean => {
+  const name = asset.name.toLowerCase();
+  const mime = asset.mimeType.toLowerCase();
+  return (
+    name.endsWith('.ppt') ||
+    name.endsWith('.pptx') ||
+    mime.includes('ms-powerpoint') ||
+    mime.includes('presentationml.presentation')
+  );
+};
+
+const resolveAbsoluteAssetUrl = (url: string): string => {
+  if (/^https?:\/\//i.test(url)) return url;
+  if (typeof window === 'undefined') return url;
+  return new URL(url, window.location.origin).toString();
+};
+
+const buildPresentationUrl = (asset: SlideAsset, slideNumber: number): string => {
+  const absoluteUrl = resolveAbsoluteAssetUrl(asset.url);
+  if (isPdfAsset(asset)) {
+    return `${absoluteUrl}#page=${Math.max(1, slideNumber)}&view=FitH&toolbar=0&navpanes=0`;
+  }
+
+  if (isPowerPointAsset(asset)) {
+    const src = encodeURIComponent(absoluteUrl);
+    return `https://view.officeapps.live.com/op/embed.aspx?src=${src}&wdSlideIndex=${Math.max(1, slideNumber)}`;
+  }
+
+  return absoluteUrl;
+};
+
+const SlideList = ({
+  assets,
+  emptyLabel,
+  presentationMode,
+}: {
+  assets: SlideAsset[];
+  emptyLabel: string;
+  presentationMode?: boolean;
+}) => {
+  const [activeAssetId, setActiveAssetId] = useState<string | null>(assets[0]?.id ?? null);
+  const [manualSlide, setManualSlide] = useState(1);
+
+  useEffect(() => {
+    if (assets.length === 0) {
+      setActiveAssetId(null);
+      return;
+    }
+
+    const stillExists = assets.some((asset) => asset.id === activeAssetId);
+    if (!stillExists) {
+      setActiveAssetId(assets[0].id);
+    }
+  }, [activeAssetId, assets]);
+
+  const activeAsset = useMemo(() => assets.find((asset) => asset.id === activeAssetId) ?? assets[0] ?? null, [activeAssetId, assets]);
+  const selectedSlides = activeAsset ? parseSelectedSlides(activeAsset.selectedSlides) : [];
+  const selectedIndex = selectedSlides.indexOf(manualSlide);
+  const hasSelectedRange = selectedSlides.length > 0;
+
+  useEffect(() => {
+    if (!activeAsset) return;
+    if (selectedSlides.length > 0) {
+      setManualSlide(selectedSlides[0]);
+      return;
+    }
+    setManualSlide(1);
+  }, [activeAsset?.id]);
+
   if (assets.length === 0) {
     return <p className="text-sm text-slate-500">{emptyLabel}</p>;
   }
 
   return (
-    <div className="space-y-3">
-      {assets.map((asset) => (
-        <a
-          key={asset.id}
-          href={asset.url}
-          target="_blank"
-          rel="noreferrer"
-          className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 hover:border-slate-400"
-        >
-          <div>
-            <span className="text-sm font-medium text-slate-800">{asset.name}</span>
-            <p className="text-xs text-slate-500">Using slides: {asset.selectedSlides || 'All slides'}</p>
+    <div className="space-y-4">
+      <div className="space-y-3">
+        {assets.map((asset) => (
+          <div
+            key={asset.id}
+            className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 ${activeAsset?.id === asset.id ? 'border-slate-400 bg-white' : 'border-slate-200 bg-slate-50'}`}
+          >
+            <div>
+              <span className="text-sm font-medium text-slate-800">{asset.name}</span>
+              <p className="text-xs text-slate-500">Using slides: {asset.selectedSlides || 'All slides'}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {presentationMode ? (
+                <button
+                  type="button"
+                  onClick={() => setActiveAssetId(asset.id)}
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                >
+                  Present in app
+                </button>
+              ) : null}
+              <a
+                href={asset.url}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100"
+              >
+                Open file
+              </a>
+              <span className="text-xs text-slate-500">{formatFileSize(asset.size)}</span>
+            </div>
           </div>
-          <span className="text-xs text-slate-500">{formatFileSize(asset.size)}</span>
-        </a>
-      ))}
+        ))}
+      </div>
+
+      {presentationMode && activeAsset ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-3">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Presentation viewer</p>
+              <p className="text-xs text-slate-500">
+                {hasSelectedRange
+                  ? `Showing selected slide range: ${activeAsset.selectedSlides}`
+                  : 'No range selected. Showing from slide 1.'}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {hasSelectedRange ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={selectedIndex <= 0}
+                    onClick={() => {
+                      if (selectedIndex > 0) {
+                        setManualSlide(selectedSlides[selectedIndex - 1]);
+                      }
+                    }}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Previous selected
+                  </button>
+                  <button
+                    type="button"
+                    disabled={selectedIndex === -1 || selectedIndex >= selectedSlides.length - 1}
+                    onClick={() => {
+                      if (selectedIndex >= 0 && selectedIndex < selectedSlides.length - 1) {
+                        setManualSlide(selectedSlides[selectedIndex + 1]);
+                      }
+                    }}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Next selected
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    disabled={manualSlide <= 1}
+                    onClick={() => setManualSlide((value) => Math.max(1, value - 1))}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setManualSlide((value) => value + 1)}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700"
+                  >
+                    Next
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+          <iframe
+            key={`${activeAsset.id}-${manualSlide}`}
+            title={`Presentation viewer for ${activeAsset.name}`}
+            src={buildPresentationUrl(activeAsset, manualSlide)}
+            className="h-[68vh] w-full rounded-xl border border-slate-200"
+          />
+          {isPowerPointAsset(activeAsset) ? (
+            <p className="mt-2 text-xs text-slate-500">
+              PowerPoint files are embedded with Office Web Viewer. In local development, use deployed URLs for reliable viewing.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 };
@@ -267,7 +465,7 @@ const SessionPage = () => {
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
               <h4 className="text-lg font-semibold">Slides</h4>
               <div className="mt-4">
-                <SlideList assets={study.valuePropositionSlides} emptyLabel="No value proposition deck uploaded yet." />
+                <SlideList assets={study.valuePropositionSlides} emptyLabel="No value proposition deck uploaded yet." presentationMode={presentationMode} />
               </div>
             </div>
           </section>
@@ -285,7 +483,7 @@ const SessionPage = () => {
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
               <h4 className="text-lg font-semibold">Slides</h4>
               <div className="mt-4">
-                <SlideList assets={study.contextSlides} emptyLabel="No context deck uploaded yet." />
+                <SlideList assets={study.contextSlides} emptyLabel="No context deck uploaded yet." presentationMode={presentationMode} />
               </div>
             </div>
           </section>
@@ -438,7 +636,7 @@ const SessionPage = () => {
       default:
         return null;
     }
-  }, [currentStep, newParticipantValue, participant, study]);
+  }, [currentStep, newParticipantValue, participant, presentationMode, study]);
 
   if (!study || !participant) {
     return (
