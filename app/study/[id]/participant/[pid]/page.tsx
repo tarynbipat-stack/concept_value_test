@@ -402,6 +402,8 @@ const SessionPage = () => {
     if (!study || !participant) return null;
 
     const questionMetaById = new Map(study.cvtQuestions.map((item) => [item.id, item]));
+    const benefitNumberByLabel = new Map(study.benefits.map((item, index) => [item, index + 1]));
+    const limitationNumberByLabel = new Map(study.limitations.map((item, index) => [item, index + 1]));
 
     switch (currentStep) {
       case 0:
@@ -543,7 +545,12 @@ const SessionPage = () => {
                 <SortableContext items={participant.benefitRanking.map((item) => `benefit:${item}`)} strategy={verticalListSortingStrategy}>
                   <div className="space-y-3">
                     {participant.benefitRanking.map((item, index) => (
-                      <SortableRankingItem key={`benefit:${item}`} id={`benefit:${item}`} label={item} position={index + 1} />
+                      <SortableRankingItem
+                        key={`benefit:${item}`}
+                        id={`benefit:${item}`}
+                        label={item}
+                        position={benefitNumberByLabel.get(item) ?? index + 1}
+                      />
                     ))}
                   </div>
                 </SortableContext>
@@ -566,7 +573,12 @@ const SessionPage = () => {
                 <SortableContext items={participant.limitationRanking.map((item) => `limitation:${item}`)} strategy={verticalListSortingStrategy}>
                   <div className="space-y-3">
                     {participant.limitationRanking.map((item, index) => (
-                      <SortableRankingItem key={`limitation:${item}`} id={`limitation:${item}`} label={item} position={index + 1} />
+                      <SortableRankingItem
+                        key={`limitation:${item}`}
+                        id={`limitation:${item}`}
+                        label={item}
+                        position={limitationNumberByLabel.get(item) ?? index + 1}
+                      />
                     ))}
                   </div>
                 </SortableContext>
